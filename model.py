@@ -1,6 +1,7 @@
 """U-Net model for binary or indexed multiclass segmentation.
 
 For the new dataset use input_size=(128, 128, 3), num_classes=3.
+Used by main.py and trainUnet.ipynb through train_model().
 Run this file directly to build and summarize that configuration.
 """
 from tensorflow.keras.layers import (
