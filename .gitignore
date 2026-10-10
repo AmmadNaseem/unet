@@ -1,4 +1,27 @@
-
+# Local Python environment and caches
 .venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local datasets and all generated training results
+/data/
+/runs/
+*.keras
+*.h5
+*.hdf5
+*.ckpt
+*.ckpt.*
+*.log
+
+# Dataset archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Sample images/results; keep the architecture documentation image
+/img/*
+!/img/u-net-architecture.png
