@@ -1,0 +1,33 @@
+{
+  "accuracy": 0.8599487543106079,
+  "loss": 0.38284072279930115,
+  "predicted_pixels_by_class_id": [
+    47461,
+    14537,
+    19922
+  ],
+  "evaluation_scope": "same training samples - sanity check only",
+  "dice_by_class_id": [
+    0.8954282711508145,
+    0.8175512381908917,
+    0.8094082412475473
+  ],
+  "macro_dice": 0.8407959168630845,
+  "confusion_matrix": [
+    [
+      41748,
+      1225,
+      2813
+    ],
+    [
+      2866,
+      13024,
+      1434
+    ],
+    [
+      2847,
+      288,
+      15675
+    ]
+  ]
+}

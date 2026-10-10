@@ -1,0 +1,28 @@
+{
+  "accuracy": 0.558544933795929,
+  "loss": 1.011472463607788,
+  "evaluation_scope": "same training samples - sanity check only",
+  "dice_by_class_id": [
+    0.716752954814252,
+    0.00011522728582128248,
+    0.0
+  ],
+  "macro_dice": 0.23895606070002443,
+  "confusion_matrix": [
+    [
+      45755,
+      31,
+      0
+    ],
+    [
+      17323,
+      1,
+      0
+    ],
+    [
+      18809,
+      1,
+      0
+    ]
+  ]
+}
