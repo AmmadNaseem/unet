@@ -1,28 +1,60 @@
-# U-Net: three-class image segmentation
+# U-Net segmentation assignment
 
-Train the repository U-Net on paired RGB images and indexed masks using
-TensorFlow/Keras. The main workflow is **trainUnet.ipynb**.
+TensorFlow-Keras U-Net for the 936-pair, three-class segmentation assignment.
+The workflow includes a fixed-seed overfit sanity check, encoder/decoder depth
+analysis, categorical cross-entropy versus CCE+Dice, and augmentation ablation.
 
-![U-Net architecture](img/u-net-architecture.png)
+## Included files
 
-## Files included
-
-| File | Purpose |
+| File | Role |
 | --- | --- |
-| `trainUnet.ipynb` | Dataset validation, preprocessing, training, evaluation, and prediction plots. Run this notebook for the new dataset. |
-| `model.py` | U-Net architecture; supports binary and multiclass output, configurable filter width, learning rate, and dropout. |
-| `data.py` | Shared validation, splitting, RGB/indexed-mask loading, prediction saving, and plotting helpers used by both notebooks and main.py. Original membrane helpers are retained. |
-| `dataPrepare.ipynb` | Inspect the new dataset, preview masks, check resized batches, and save runs/prepared_dataset.json for training. |
-| `main.py` | Shared preparation, training, and evaluation functions imported by trainUnet.ipynb; also a runnable CLI for the new dataset. |
-| `requirements.txt` | Python libraries for training and notebook execution. |
-| `.gitignore` | Excludes local environments, datasets, training artifacts, logs, and generated images. |
-| `.gitattributes` | Git text-file normalization rules. |
-| `img/u-net-architecture.png` | Architecture illustration retained in the repository. |
-| `LICENSE` | Repository license. |
+| `data.py` | Validate pairs, make sklearn splits, load RGB/one-hot masks, apply synchronized augmentation, save and plot predictions. Original membrane helpers remain available. |
+| `model.py` | Configurable U-Net depth/width and serializable `CategoricalDiceLoss`. Four pooling/upsampling levels is the standard topology. |
+| `main.py` | Shared preparation, training, sklearn F1/Dice evaluation, experiment selection, reporting, and CLI. |
+| `dataPrepare.ipynb` | Inspect masks and image alignment; preview data and save a preparation manifest. |
+| `trainUnet.ipynb` | Colab/local assignment workflow using the shared modules; sanity run, depth study, loss/augmentation comparisons, measured tables and plots. |
+| `requirements.txt` | Local Python dependencies, including scikit-learn. |
+| `requirements-gpu.txt` | WSL/Linux TensorFlow CUDA dependencies and the same project libraries. |
+| `.gitignore` | Excludes dataset images, results, weights, logs, environments, and caches. |
+| `.gitattributes`, `LICENSE` | Repository text settings and license. |
+| `img/u-net-architecture.png` | Architecture illustration. |
 
-## 1. Set up the environment (Windows PowerShell)
+## Dataset and class names
 
-Open a terminal in the repository folder. Python 3.11 is the verified environment.
+Keep matching PNG files locally at `data/936/data/<id>.png` and
+`data/936/mask/<id>.png`. There must be 936 image/mask pairs. Images are RGB;
+masks are same-size single-channel arrays with IDs 0, 1, and 2. Unknown values
+or mismatched filenames/dimensions raise errors. RGB is normalized; masks are
+resized with nearest-neighbor interpolation and then one-hot encoded for CCE.
+
+The local archive contains no class-name metadata. A closely matching
+[Tobacco Aerial Dataset](https://data.mendeley.com/datasets/5dpc5gbgpz/2)
+documents a 936-image campaign, 480x352 patches, the same folder layout, and
+0=background, 1=crop, 2=weed. This is a **provisional identification**, not proof
+that this archive is that dataset. That source describes tobacco, not wheat.
+The notebook marks crop/weed names as provisional. Confirm the dataset origin
+or instructor mapping before labeling the crop as wheat. IDs are never swapped
+or relabeled by the implementation; change `CLASS_NAMES` for verified names.
+
+## Run on Google Colab
+
+1. Copy `data.py`, `model.py`, `main.py`, both notebooks, and `data/936` into
+   `MyDrive/unet` in Google Drive. Dataset/results stay local or in your Drive,
+   not GitHub. You do not need to upload `.venv` or previous `runs` folders.
+2. Open `dataPrepare.ipynb` in Colab. Choose **Runtime -> Change runtime type -> GPU**.
+3. Run its setup cell, mount Drive, and set `PROJECT_DIR` if your folder differs
+   from `/content/drive/MyDrive/unet`. The setup uses Colab's installed TensorFlow
+   and installs scikit-learn, Pillow, and matplotlib as needed.
+4. Run all preparation cells. Inspect the mask IDs, class colors, and alignment.
+5. Open `trainUnet.ipynb` in Colab, use a GPU runtime, and run its setup/configuration.
+6. Run the sanity check and inspect the predictions before the full experiments.
+7. Run the depth study and the four loss/augmentation comparisons. Read the
+   generated report, curves, per-class Dice, and saved predictions.
+
+Use the same dataset path and seed in both notebooks. If a preparation manifest
+matches, training consumes it; otherwise the same shared validation is run again.
+
+## Run locally in VS Code (PowerShell)
 
 ```powershell
 py -3.11 -m venv .venv
@@ -30,164 +62,129 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-If `.venv` already exists, skip the first command. Optionally activate it:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-The commands using `.venv\Scripts\python.exe` also work without activation.
-In VS Code, install the Python and Jupyter extensions if needed.
-
-## 2. Place your dataset locally
-
-Datasets are not included in Git. Put the images and masks in this layout:
-
-```text
-data/
-â””â”€â”€ 936/
-    â”œâ”€â”€ data/
-    â”‚   â”œâ”€â”€ 1.png
-    â”‚   â”œâ”€â”€ 2.png
-    â”‚   â””â”€â”€ ...
-    â””â”€â”€ mask/
-        â”œâ”€â”€ 1.png
-        â”œâ”€â”€ 2.png
-        â””â”€â”€ ...
-```
-
-Each RGB image must have a same-name, same-size single-channel PNG mask.
-Masks contain integer class IDs **0, 1, 2**, not normalized pixel values.
-The notebook checks filenames, dimensions, and IDs before training.
-Semantic class names must come from the dataset documentation.
-
-## 3. Run trainUnet.ipynb
-
-1. Open the repository folder in VS Code. First open `dataPrepare.ipynb`, select `.venv`, and run all cells to inspect the dataset. Then open `trainUnet.ipynb`.
-2. Click **Select Kernel â†’ Python Environments** and choose `.venv`.
-3. Restart the kernel after editing `model.py` so the new code is imported.
-4. Check the configuration cell, then click **Run All**.
-5. Confirm that the first cell prints the project's `.venv\Scripts\python.exe`.
-6. Read the training logs and the image / ground-truth / prediction comparison. The preparation manifest is used when its dataset and limit match; otherwise training performs its own validation with the same data.py helper.
-
-If the environment is not listed, register its kernel:
+Skip creation if `.venv` already exists. Open the folder in VS Code with Python
+and Jupyter extensions, select the `.venv` notebook kernel, and run preparation
+then training. Restart the kernel after changing imported Python modules.
+If needed, register the kernel:
 
 ```powershell
 .\.venv\Scripts\python.exe -m ipykernel install --user --name unet-venv --display-name "Python (.venv U-Net)"
 ```
 
-Select **Python (.venv U-Net)** and run all cells from the top.
-TensorFlow runs on CPU in the verified native Windows environment.
-
-### Default five-image sanity run
-
-The configuration cell contains:
-
-```python
-DATASET = Path('data/936')
-LIMIT = 5
-EPOCHS = 120
-IMAGE_SIZE = 128
-BATCH_SIZE = 4
-BASE_FILTERS = 16
-LEARNING_RATE = 1e-3
-DROPOUT_RATE = 0.0 if LIMIT is not None else 0.5
-```
-
-This selects pairs 1 through 5, resizes RGB images to 128x128 and masks with
-nearest-neighbor interpolation, and trains a three-class softmax model using
-sparse categorical cross-entropy. A learning-rate callback reduces the rate
-if validation loss stops improving. Evaluation reloads the best checkpoint.
-
-All five images are used for training and evaluation in this mode. Its accuracy
-and Dice scores show whether the model can fit these samples; they do **not**
-measure unseen-image performance. Longer training and disabling dropout help
-this tiny run learn visible segmentation instead of predicting only class 0.
-
-### Train on all 936 pairs
-
-Set `LIMIT = None` in the configuration cell, restart the kernel, and run all
-cells. This enables the fixed-seed split: 673 training, 75 validation, and
-188 held-out test pairs. Dropout becomes 0.5. Adjust `EPOCHS` to your training
-budget. Full-dataset training takes longer than the five-image run.
-
-## 4. Find the generated results
-
-Every run creates a new timestamped directory under `runs/`:
-
-```text
-runs/notebook_five_images_<timestamp>/
-â”œâ”€â”€ best.keras                   # Best validation-loss model
-â”œâ”€â”€ config.json                  # Settings and interpreter used
-â”œâ”€â”€ split.json                   # Selected sample IDs
-â”œâ”€â”€ training.csv                 # Epoch logs
-â”œâ”€â”€ history.json                 # Training history
-â”œâ”€â”€ metrics.json                 # Accuracy, loss, Dice, and class counts
-â”œâ”€â”€ prediction_comparison.png    # Images, true masks, and predictions
-â””â”€â”€ predictions/
-    â”œâ”€â”€ 1_mask.png               # Predicted integer class IDs
-    â”œâ”€â”€ 1_color.png              # Display-color rendering
-    â””â”€â”€ ...
-```
-
-The folder prefix remains `notebook_five_images_` even when `LIMIT=None`;
-`config.json` and `split.json` record the actual selection. Colors are only
-visualization colors. The notebook shows up to five comparisons and saves
-up to six prediction pairs. Executed verification notebooks are saved locally as
-`runs/dataPrepare_executed_local.ipynb` and `runs/trainUnet_executed_local.ipynb`.
-Open these copies to view saved outputs. Versioned notebooks keep their code
-without embedded dataset images or results.
-
-To build the model and print its summary without training:
+Native Windows runs use CPU in the verified environment; Colab GPU is preferred
+for all full-dataset experiments. To print the architecture without training:
 
 ```powershell
 .\.venv\Scripts\python.exe model.py
 ```
 
-## Shared workflow and optional CLI
+## Experiment design
 
-```text
-dataPrepare.ipynb -> data.py -> runs/prepared_dataset.json
-trainUnet.ipynb -> main.py -> model.py
-                       -> data.py -> images, masks, predictions
-```
+- Seed 42 is used for sklearn splitting, Python/NumPy/TensorFlow randomness,
+  model initialization, shuffling, and augmentation. Deterministic TensorFlow
+  operations are enabled; exact values may still differ across software/hardware.
+- `train_test_split(..., test_size=0.2, random_state=42)` produces 748 development
+  and 188 test pairs. A further 10% of development is validation: 673 train,
+  75 validation. The 188 test pairs are never used for training or depth selection.
+- Sanity check: five images selected only from the training split; four-level
+  U-Net, no dropout/augmentation, 300-epoch budget. Same-sample scores are not
+  held-out results. Inspect whether it overfits; increase the budget if necessary.
+- Depth study: 2, 3, 4, 5 pooling/upsampling levels, identical seed, split, width,
+  resolution, optimizer, and 20-epoch budget. Choose the smallest depth within
+  0.005 macro Dice of the best validation score. Report validation Dice, parameter
+  count, and training time, rather than deciding the answer in advance.
+- At the selected depth, train all four combinations: CCE without/with augmentation
+  and CCE+Dice without/with augmentation. These report held-out test scores. All
+  configurations and comparisons are fixed before looking at test results.
+- Loss: mean categorical CE plus `DICE_WEIGHT * (1 - mean soft class Dice)`.
+  The default Dice weight is 1.0; loss is serializable in `.keras` checkpoints.
+- Augmentation: joint horizontal/vertical flips and 90-degree rotations, plus
+  image-only brightness changes. Validation/test are not augmented.
+- Scores: `sklearn.metrics.f1_score` on flattened argmax predictions and true IDs.
+  Pixel class F1 equals Dice. Report each ID's Dice, macro Dice over all three,
+  and foreground macro Dice over IDs 1 and 2, with `zero_division=0`.
 
-The preparation notebook is a separate first step, rather than being imported
-as a Python module. Its manifest is consumed by the training functions.
-Dataset loading and prediction code is shared instead of duplicated in the
-notebooks. The notebook keeps configuration and stage-by-stage calls visible.
+The default resolution is 128x128 and base filter width is 16, retaining the
+standard U-Net topology with a smaller width for feasible training. Set width
+64 for the canonical reference width. Keep width/resolution unchanged across
+comparisons. Deeper networks use more parameters; reduce batch size if GPU
+memory is insufficient, then rerun all comparisons with that same batch size.
 
-The same workflow can run from the terminal:
+## Optional CLI
 
 ```powershell
-.\.venv\Scripts\python.exe main.py --limit 5 --epochs 120
+# Five-image overfit sanity run
+.\.venv\Scripts\python.exe main.py --limit 5 --epochs 300
+
+# Full assignment experiments, using the same seed and 20 epochs per run
+.\.venv\Scripts\python.exe main.py --suite --all-images --epochs 20
+
+# Single full-dataset CCE+Dice run with augmentation
+.\.venv\Scripts\python.exe main.py --all-images --epochs 20 --loss-mode cce_dice --augmentation
 ```
 
-For full-dataset training with held-out evaluation:
+`--help` lists depth, width, seed, learning-rate, Dice-weight, class-name, and
+output options. Use new output folders to avoid overwriting existing runs.
 
-```powershell
-.\.venv\Scripts\python.exe main.py --all-images --epochs 120
-```
+## Results and report
 
-CLI runs save their results under `runs/cli_<timestamp>/`; no separate
-train/test Python scripts are needed. Use `--help` to see the available options.
+Each run saves `best.keras`, `split.json`, `config.json`, `history.json`,
+`training.csv`, `metrics.json`, up to six prediction mask/color pairs, and a
+comparison figure under ignored `runs/`. Each experiment suite also writes:
+
+- `experiment_results.csv` and `.json`: actual measured configuration scores,
+  parameter counts, and timings (updated after every completed experiment).
+- `depth_selection.json`: validation-only depth-selection criterion and result.
+- `performance_differences.json`: signed macro Dice differences for Dice loss
+  and augmentation, both with and without the other factor.
+- `experiment_report.md`: measured depth/ablation tables and differences.
+
+The notebook adds depth/time/parameter curves and an ablation bar chart.
+Do not fabricate metrics or claim unexecuted Colab experiments were measured.
+A tiny two-epoch smoke suite verifies code paths only; a lower-resolution
+five-epoch full-dataset pilot is preliminary, not the default 20-epoch study.
+Use the measured outputs to write your own explanation of why depth, loss,
+and augmentation helped or hurt. One fixed seed does not establish statistical
+significance; document resolution, width, epoch budget, and mapping uncertainty.
 
 ## GitHub exclusions
 
-Commit the source files, notebook code, requirements, documentation, and
-architecture illustration. `.gitignore` excludes `data/`, `runs/`, `.venv/`,
-Python/Jupyter caches, model artifacts, dataset archives, logs, and sample
-images under `img/` except the architecture illustration.
+Dataset images, `runs/`, models, logs, `.venv`, caches, and archives are ignored.
+Notebook source files are kept without embedded outputs. Local executed copies
+can be saved as `runs/dataPrepare_executed_local.ipynb` and
+`runs/trainUnet_executed_local.ipynb`; clear source-notebook outputs before
+committing. Removing tracked data/results from the index does not erase old
+GitHub history. The architecture illustration is retained.
 
-Dataset and result files that were previously tracked have been removed from
-the Git index; their local copies remain. This changes the next commit and
-does not erase files from older commits or an existing GitHub history.
+Based on [U-Net: Convolutional Networks for Biomedical Image Segmentation](https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net/).
 
-Notebook outputs can embed dataset images even when their folders are ignored.
-Before committing a newly executed notebook, use **Clear All Outputs** and save
-it. Keep an executed copy under the ignored `runs/` folder if needed.
 
-## Reference
+## Local RTX GPU training through Ubuntu WSL2
 
-Based on the repository's original Keras implementation of
-[U-Net: Convolutional Networks for Biomedical Image Segmentation](https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net/).
+Modern TensorFlow does not use CUDA from the native Windows `.venv`. Use the
+separate `.venv-wsl` Linux environment or select a Colab GPU runtime. The training
+notebook now has `REQUIRE_GPU=True` and stops early if no GPU is detected.
+GPU memory growth prevents TensorFlow from reserving all available GPU memory.
+
+Open this repository with **VS Code: WSL: Reopen Folder in WSL**, then select
+**Python (WSL GPU U-Net)** (`unet-gpu`) as the notebook kernel. Run preparation and training
+notebooks normally. The Windows `.venv` can still run preparation on CPU.
+
+From an Ubuntu WSL terminal in the repository folder:
+
+```bash
+python3 -m venv .venv-wsl
+.venv-wsl/bin/python -m pip install -r requirements-gpu.txt
+.venv-wsl/bin/python -m ipykernel install --prefix .venv-wsl --name unet-gpu --display-name "Python (WSL GPU U-Net)"
+.venv-wsl/bin/python gpu_env_setup.py
+export LD_LIBRARY_PATH="/usr/lib/wsl/lib:$(.venv-wsl/bin/python -c 'import site; from pathlib import Path; print(":".join(str(p) for s in site.getsitepackages() for p in Path(s).glob("nvidia/*/lib")))'):${LD_LIBRARY_PATH:-}"
+.venv-wsl/bin/python -m pip check
+.venv-wsl/bin/python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+.venv-wsl/bin/python main.py --suite --all-images --epochs 20 --require-gpu
+```
+
+`requirements-gpu.txt` installs the same project libraries plus the CUDA
+dependencies via `tensorflow[and-cuda]`. `gpu_env_setup.py` links CUDA libraries
+and configures the registered kernel's CUDA search paths. Both environments and all
+GPU results under `runs/` are excluded from Git. See the
+[TensorFlow GPU installation instructions](https://www.tensorflow.org/install/pip).

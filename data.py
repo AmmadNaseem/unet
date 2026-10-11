@@ -3,8 +3,6 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import numpy as np 
 import os
 import glob
-import skimage.io as io
-import skimage.transform as trans
 
 Sky = [128,128,128]
 Building = [128,0,0]
@@ -83,6 +81,8 @@ def trainGenerator(batch_size,train_path,image_folder,mask_folder,aug_dict,image
 
 
 def testGenerator(test_path,num_image = 30,target_size = (256,256),flag_multi_class = False,as_gray = True):
+    import skimage.io as io
+    import skimage.transform as trans
     for i in range(num_image):
         img = io.imread(os.path.join(test_path,"%d.png"%i),as_gray = as_gray)
         img = img / 255
@@ -93,6 +93,8 @@ def testGenerator(test_path,num_image = 30,target_size = (256,256),flag_multi_cl
 
 
 def geneTrainNpy(image_path,mask_path,flag_multi_class = False,num_class = 2,image_prefix = "image",mask_prefix = "mask",image_as_gray = True,mask_as_gray = True):
+    import skimage.io as io
+    import skimage.transform as trans
     image_name_arr = glob.glob(os.path.join(image_path,"%s*.png"%image_prefix))
     image_arr = []
     mask_arr = []
@@ -119,6 +121,7 @@ def labelVisualize(num_class,color_dict,img):
 
 
 def saveResult(save_path,npyfile,flag_multi_class = False,num_class = 2):
+    import skimage.io as io
     for i,item in enumerate(npyfile):
         img = labelVisualize(num_class,COLOR_DICT,item) if flag_multi_class else item[:,:,0]
         io.imsave(os.path.join(save_path,"%d_predict.png"%i),img)
@@ -129,57 +132,75 @@ from PIL import Image
 import tensorflow as tf
 
 
-def prepare_dataset(dataset_path, limit=5):
-    """Validate matching RGB images/masks and select a reproducible split."""
+def prepare_dataset(dataset_path, limit=5, seed=42):
+    """80/20 train_test_split; reserve validation within the 80% training pool.
+
+    limit selects a tiny subset only from training for a same-sample sanity run.
+    """
+    from sklearn.model_selection import train_test_split
     dataset_path = Path(dataset_path)
-    if limit is not None and (not isinstance(limit, int) or limit < 1):
-        raise ValueError("limit must be a positive integer or None")
-    images = {x.stem: x for x in (dataset_path / 'data').glob('*.png')}
-    masks = {x.stem: x for x in (dataset_path / 'mask').glob('*.png')}
+    images = {p.stem: p for p in (dataset_path / 'data').glob('*.png')}
+    masks = {p.stem: p for p in (dataset_path / 'mask').glob('*.png')}
     if not images or images.keys() != masks.keys():
-        raise ValueError('Dataset must contain exactly matched data/*.png and mask/*.png')
+        raise ValueError("Exactly matched data/*.png and mask/*.png are required")
     keys = sorted(images)
-    if limit is not None:
-        keys = sorted(keys, key=lambda k: (0, int(k)) if k.isdigit() else (1, k))
-    if limit is not None:
-        if limit > len(keys):
-            raise ValueError('Requested limit exceeds available image/mask pairs')
-        keys = keys[:limit]
     labels = set()
     for key in keys:
-        with Image.open(images[key]) as im, Image.open(masks[key]) as mask:
-            values = np.asarray(mask)
-            if values.ndim != 2 or im.size != mask.size:
-                raise ValueError(f'Invalid mask or mismatched dimensions: {key}')
-            labels.update(np.unique(values).tolist())
-    if labels != {0, 1, 2}:
-        raise ValueError(f'Expected mask IDs 0,1,2, found {labels}')
-    rng = np.random.default_rng(42)
-    order = rng.permutation(len(keys))
-    ntest = int(np.ceil(len(keys) * .2))
-    nval = int(np.ceil((len(keys) - ntest) * .1))
-    splits = {'test': order[:ntest], 'validation': order[ntest:ntest+nval], 'train': order[ntest+nval:]}
+        with Image.open(images[key]) as image, Image.open(masks[key]) as mask:
+            array = np.asarray(mask)
+            if array.ndim != 2 or image.size != mask.size:
+                raise ValueError(f"Invalid mask or mismatched dimensions: {key}")
+            labels.update(np.unique(array).tolist())
+    if labels != {0,1,2}:
+        raise ValueError(f"Expected IDs 0,1,2, found {labels}")
+    development, test = train_test_split(keys, test_size=0.2, random_state=seed)
+    train, validation = train_test_split(development, test_size=0.1, random_state=seed)
+    manifest = {'train': train, 'validation': validation, 'test': test}
     if limit is not None:
-        splits = {name: np.arange(len(keys)) for name in ('train', 'validation', 'test')}
-    manifest = {name: [keys[i] for i in indices] for name, indices in splits.items()}
+        if not isinstance(limit, int) or not 1 <= limit <= len(train):
+            raise ValueError("limit must be positive and no larger than the training split")
+        subset = train[:limit]
+        manifest = {name: subset.copy() for name in manifest}
     return images, masks, manifest
 
 
-def make_dataset(images, masks, ids, size=128, batch_size=4, training=False, seed=42):
-    """Load float RGB images and unnormalized integer masks using tf.data."""
+def augment_pair(image, mask, seed):
+    """Apply identical flips/90-degree rotations; brightness changes images only."""
+    seeds = tf.random.experimental.stateless_split(seed, 4)
+    combined = tf.concat([image, tf.cast(mask[...,None], tf.float32)], axis=-1)
+    combined = tf.image.stateless_random_flip_left_right(combined, seeds[0])
+    combined = tf.image.stateless_random_flip_up_down(combined, seeds[1])
+    k = tf.random.stateless_uniform([], seeds[2], minval=0, maxval=4, dtype=tf.int32)
+    combined = tf.image.rot90(combined, k)
+    image = tf.clip_by_value(tf.image.stateless_random_brightness(combined[...,:3], 0.1, seeds[3]), 0., 1.)
+    return image, tf.cast(combined[...,3], tf.int32)
+
+
+def make_dataset(images, masks, ids, size=128, batch_size=4, training=False,
+                 seed=42, augmentation=False, one_hot=False):
+    """Deterministic loader; augment training only, then optionally one-hot encode."""
     if not ids:
         raise ValueError("Dataset split cannot be empty")
+    if augmentation and not training:
+        raise ValueError("Augmentation is allowed only on training data")
     def load(image_path, mask_path):
         image = tf.io.decode_png(tf.io.read_file(image_path), channels=3)
-        image = tf.image.resize(tf.cast(image, tf.float32), [size, size]) / 255.
+        image = tf.image.resize(tf.cast(image, tf.float32), [size,size]) / 255.
         mask = tf.io.decode_png(tf.io.read_file(mask_path), channels=1)
-        mask = tf.image.resize(mask, [size, size], method='nearest')
+        mask = tf.image.resize(mask, [size,size], method='nearest')
         return image, tf.cast(tf.squeeze(mask, -1), tf.int32)
-    ds = tf.data.Dataset.from_tensor_slices(
-        ([str(images[k]) for k in ids], [str(masks[k]) for k in ids]))
+    ds = tf.data.Dataset.from_tensor_slices(([str(images[k]) for k in ids], [str(masks[k]) for k in ids]))
     if training:
         ds = ds.shuffle(len(ids), seed=seed)
-    return ds.map(load, num_parallel_calls=2).batch(batch_size).prefetch(1)
+    ds = ds.map(load, num_parallel_calls=2, deterministic=True)
+    if augmentation:
+        random = tf.data.Dataset.random(seed=seed, rerandomize_each_iteration=True)
+        def apply(pair, value):
+            return augment_pair(pair[0], pair[1], tf.stack([tf.cast(seed,tf.int32), tf.cast(value,tf.int32)]))
+        ds = tf.data.Dataset.zip((ds, random)).map(apply, num_parallel_calls=2, deterministic=True)
+    if one_hot:
+        ds = ds.map(lambda image, mask: (image, tf.one_hot(mask, 3)), num_parallel_calls=2, deterministic=True)
+    return ds.batch(batch_size).prefetch(1)
 
 
 def save_prediction(save_path, key, prediction):

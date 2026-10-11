@@ -25,3 +25,6 @@ __pycache__/
 # Sample images/results; keep the architecture documentation image
 /img/*
 !/img/u-net-architecture.png
+
+# Linux/WSL GPU environment
+.venv-wsl/
